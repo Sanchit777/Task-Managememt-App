@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Replace with your local machine's IP address when running on a physical device, 
 // or 10.0.2.2 for Android Emulator, or localhost for iOS Simulator
-const API_URL = 'http://10.32.230.207:5000/api'; 
+const API_URL = 'https://task-managememt-app.onrender.com/api'; 
 
 const api = axios.create({
   baseURL: API_URL,

@@ -4,9 +4,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { ThemeContext } from '../constants/ThemeContext';
 import axios from 'axios';
 
-// Ensure this matches where you make backend requests. Replace with your actual logic if different.
-import { getTasks } from '../services/api'; 
-const API_URL = 'http://192.168.1.100:5000/api'; // Or whatever your current local ip is
+// Use the central API service to ensure we hit the right Render URL
+import { getTasks, updateTaskStatus } from '../services/api'; 
 
 export default function TaskDetailModal({ visible, task, onClose, onRefresh }) {
     const { COLORS } = useContext(ThemeContext);
@@ -26,7 +25,7 @@ export default function TaskDetailModal({ visible, task, onClose, onRefresh }) {
                     onPress: async () => {
                         try {
                             setLoading(true);
-                            await axios.put(`${API_URL}/tasks/${task.id}`, { status: 'Completed' });
+                            await updateTaskStatus(task.id, 'Completed');
                             onRefresh(); // Trigger parent refresh
                             onClose();
                         } catch (err) {

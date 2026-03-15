@@ -158,18 +158,13 @@ export default function TaskFormScreen({ navigation }) {
 
                     <View style={styles.inputGroup}>
                         <Text style={[styles.label, { color: COLORS.slate700 }]}>Responsible Person</Text>
-                        <View style={[styles.pickerContainer, { backgroundColor: COLORS.slate50, borderColor: COLORS.slate200 }]}>
-                            <Picker
-                                selectedValue={formData.responsiblePerson}
-                                onValueChange={(itemValue) => handleChange('responsiblePerson', itemValue)}
-                                style={{color: COLORS.slate900}}
-                            >
-                                <Picker.Item label="Select Assignee..." value="" color={COLORS.slate400} />
-                                <Picker.Item label="Alex Rivera" value="Alex Rivera" />
-                                <Picker.Item label="Sarah Chen" value="Sarah Chen" />
-                                <Picker.Item label="Jordan Smith" value="Jordan Smith" />
-                            </Picker>
-                        </View>
+                        <TextInput
+                            style={[styles.input, { backgroundColor: COLORS.slate50, borderColor: COLORS.slate200, color: COLORS.slate900 }]}
+                            placeholder="e.g. Alex Rivera"
+                            placeholderTextColor={COLORS.slate400}
+                            value={formData.responsiblePerson}
+                            onChangeText={(text) => handleChange('responsiblePerson', text)}
+                        />
                     </View>
 
                     <View style={styles.inputGroup}>
