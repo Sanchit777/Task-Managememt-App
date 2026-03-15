@@ -206,10 +206,6 @@ app.post('/api/tasks', async (req, res) => {
                                         <td style="padding: 12px; color: #ef4444; font-weight: bold;">${rowData['Deadline'] || 'Not Set'}</td>
                                     </tr>
                                 </table>
-                                
-                                <div style="margin-top: 24px; text-align: center;">
-                                    <a href="https://task-managememt-app.onrender.com" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">View Dashboard</a>
-                                </div>
                             </div>
                             <div style="background-color: #f8fafc; padding: 16px; text-align: center; color: #94a3b8; font-size: 12px;">
                                 This is an automated message from the Task Management System.
