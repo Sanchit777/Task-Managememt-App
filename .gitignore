@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+.env
+*.env
+task-management-app-*.json
+stitch (4)/
+stitch (4)*
+.DS_Store
+dist/
+build/
+web-build/
