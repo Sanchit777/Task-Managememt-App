@@ -3,7 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 const app = express();
 app.use(cors());
@@ -55,14 +55,9 @@ async function initGoogleSheets() {
 
 initGoogleSheets();
 
-// Nodemailer Config
-const transporter = nodemailer.createTransport({
-    service: 'gmail', 
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+// Resend Config
+// We will use EMAIL_PASS for the Resend API Key temporarily to avoid needing to add new ENV vars immediately.
+const resend = new Resend(process.env.EMAIL_PASS);
 
 // Helper for Task ID Generation
 const generateTaskId = async (sheet) => {
@@ -178,24 +173,55 @@ app.post('/api/tasks', async (req, res) => {
 
         await sheet.addRow(rowData);
 
-        // Send Email Notification
+        // Send Email Notification using Resend
         if (process.env.EMAIL_USER) {
-             const mailOptions = {
-                 from: process.env.EMAIL_USER,
-                 to: 'sanchitchoudhary123@gmail.com', // Change this to the intended recipient logic later
-                 subject: `New Task Assigned: ${taskId}`,
-                 text: `A new task has been assigned to you.\n\n` +
-                       `Task ID:     ${taskId}\n` +
-                       `Client:      ${rowData['Client Name'] || 'N/A'}\n` +
-                       `Description: ${rowData['Description'] || 'N/A'}\n` +
-                       `Deadline:    ${rowData['Deadline'] || 'Not Set'}\n\n` +
-                       `Please check the Dashboard for more details.`
-             };
-             
-             transporter.sendMail(mailOptions, (error, info) => {
-                  if (error) console.log("Email Error: ", error);
-                  else console.log('Email sent: ' + info.response);
-             });
+             try {
+                 const { data, error } = await resend.emails.send({
+                     from: 'Acme <onboarding@resend.dev>', // Resend's free testing domain
+                     to: 'sanchitchoudhary123@gmail.com', // Only works for your verified email on the free tier
+                     subject: `New Task Assigned: ${taskId}`,
+                     html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                            <div style="background-color: #4f46e5; padding: 20px; text-align: center;">
+                                <h2 style="color: #ffffff; margin: 0; font-size: 24px;">New Task Assignment</h2>
+                            </div>
+                            <div style="padding: 24px; background-color: #ffffff;">
+                                <p style="color: #475569; font-size: 16px; margin-top: 0;">You have been assigned a new task. Please review the details below:</p>
+                                
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                                    <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #64748b; width: 140px; font-weight: bold;">Task ID</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a; font-family: monospace;">${taskId}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-weight: bold;">Client</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a;">${rowData['Client Name']}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #64748b; font-weight: bold;">Description</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a;">${rowData['Description']}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px; color: #64748b; font-weight: bold;">Deadline</td>
+                                        <td style="padding: 12px; color: #ef4444; font-weight: bold;">${rowData['Deadline'] || 'Not Set'}</td>
+                                    </tr>
+                                </table>
+                                
+                                <div style="margin-top: 24px; text-align: center;">
+                                    <a href="https://task-managememt-app.onrender.com" style="background-color: #4f46e5; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">View Dashboard</a>
+                                </div>
+                            </div>
+                            <div style="background-color: #f8fafc; padding: 16px; text-align: center; color: #94a3b8; font-size: 12px;">
+                                This is an automated message from the Task Management System.
+                            </div>
+                        </div>
+                     `
+                 });
+                 if (error) console.log("Resend Email Error: ", error);
+                 else console.log('Resend Email sent successfully: ', data.id);
+             } catch (err) {
+                 console.log("Resend Exception: ", err);
+             }
         }
 
         res.json({ success: true, taskId: taskId, task: rowData });
@@ -237,22 +263,50 @@ app.put('/api/tasks/:id', async (req, res) => {
 
         await row.save();
 
-        // Send Email Notification if Status Changed
+        // Send Email Notification if Status Changed using Resend
         if (process.env.EMAIL_USER && oldStatus !== newStatus) {
-             const mailOptions = {
-                 from: process.env.EMAIL_USER,
-                 to: 'sanchitchoudhary123@gmail.com', // Update recipient logic
-                 subject: `Task Status Updated: ${id}`,
-                 text: `The status for Task ${id} has been changed to: [ ${newStatus.toUpperCase()} ]\n\n` +
-                       `Client:      ${row.get('Client Name') || 'N/A'}\n` +
-                       `Description: ${row.get('Description') || 'N/A'}\n\n` +
-                       `Please check the Dashboard for more details.`
-             };
-             
-             transporter.sendMail(mailOptions, (error, info) => {
-                  if (error) console.log("Email Error: ", error);
-                  else console.log('Email sent: ' + info.response);
-             });
+             try {
+                 let statusColor = newStatus === 'Completed' ? '#10b981' : (newStatus === 'In Progress' ? '#f59e0b' : '#64748b');
+                 const { data, error } = await resend.emails.send({
+                     from: 'Acme <onboarding@resend.dev>',
+                     to: 'sanchitchoudhary123@gmail.com',
+                     subject: `Task Status Updated: ${id}`,
+                     html: `
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                            <div style="background-color: #f1f5f9; padding: 20px; text-align: center; border-bottom: 2px solid ${statusColor};">
+                                <h2 style="color: #334155; margin: 0; font-size: 24px;">Task Status Update</h2>
+                            </div>
+                            <div style="padding: 24px; background-color: #ffffff;">
+                                <p style="color: #475569; font-size: 16px; margin-top: 0;">The status for task <strong>${id}</strong> has been updated.</p>
+                                
+                                <div style="text-align: center; margin: 24px 0;">
+                                    <span style="background-color: ${statusColor}1a; color: ${statusColor}; padding: 8px 16px; border-radius: 999px; font-weight: bold; font-size: 16px; text-transform: uppercase;">
+                                        ${newStatus}
+                                    </span>
+                                </div>
+                                
+                                <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+                                    <tr>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #64748b; width: 140px; font-weight: bold;">Client</td>
+                                        <td style="padding: 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a;">${row.get('Client Name')}</td>
+                                    </tr>
+                                    <tr>
+                                        <td style="padding: 12px; color: #64748b; font-weight: bold;">Description</td>
+                                        <td style="padding: 12px; color: #0f172a;">${row.get('Description')}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div style="background-color: #f8fafc; padding: 16px; text-align: center; color: #94a3b8; font-size: 12px;">
+                                This is an automated message from the Task Management System.
+                            </div>
+                        </div>
+                     `
+                 });
+                 if (error) console.log("Resend Email Error: ", error);
+                 else console.log('Resend Email sent successfully: ', data.id);
+             } catch (err) {
+                 console.log("Resend Exception: ", err);
+             }
         }
 
         res.json({ success: true, message: "Task updated" });
@@ -263,20 +317,22 @@ app.put('/api/tasks/:id', async (req, res) => {
     }
 });
 
-// Test Email Endpoint
+// Test Email Endpoint using Resend
 app.get('/api/test-email', async (req, res) => {
     try {
-        const mailOptions = {
-            from: process.env.EMAIL_USER,
+        const { data, error } = await resend.emails.send({
+            from: 'Acme <onboarding@resend.dev>',
             to: 'sanchitchoudhary123@gmail.com',
-            subject: "Render Server Email Debug Test",
-            text: "Testing email transport from the live Render server."
-        };
-        
-        const info = await transporter.sendMail(mailOptions);
-        res.json({ success: true, info: info.response, envUser: process.env.EMAIL_USER ? 'SET' : 'MISSING', envPass: process.env.EMAIL_PASS ? 'SET' : 'MISSING' });
+            subject: 'Render Server Resend Test',
+            html: '<p>Testing Resend API from the live Render server.</p>'
+        });
+
+        if (error) {
+           return res.status(400).json({ success: false, error });
+        }
+        res.json({ success: true, data });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message, stack: error.stack, envUser: process.env.EMAIL_USER ? 'SET' : 'MISSING' });
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
