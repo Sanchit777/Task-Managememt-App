@@ -263,6 +263,23 @@ app.put('/api/tasks/:id', async (req, res) => {
     }
 });
 
+// Test Email Endpoint
+app.get('/api/test-email', async (req, res) => {
+    try {
+        const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: 'sanchitchoudhary123@gmail.com',
+            subject: "Render Server Email Debug Test",
+            text: "Testing email transport from the live Render server."
+        };
+        
+        const info = await transporter.sendMail(mailOptions);
+        res.json({ success: true, info: info.response, envUser: process.env.EMAIL_USER ? 'SET' : 'MISSING', envPass: process.env.EMAIL_PASS ? 'SET' : 'MISSING' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message, stack: error.stack, envUser: process.env.EMAIL_USER ? 'SET' : 'MISSING' });
+    }
+});
+
 // Delete Task
 app.delete('/api/tasks/:id', async (req, res) => {
     try {
