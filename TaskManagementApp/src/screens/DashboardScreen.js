@@ -168,6 +168,11 @@ export default function DashboardScreen({ navigation }) {
                     </View>
                 )}
                 renderItem={renderTask}
+                ListFooterComponent={
+                    <View style={styles.createdFooter}>
+                        <Text style={styles.createdText}>Created By Sanchit</Text>
+                    </View>
+                }
                 ListEmptyComponent={<Text style={styles.empty}>No tasks available</Text>}
             />
             
@@ -447,5 +452,17 @@ const getStyles = (COLORS) => StyleSheet.create({
         fontSize: 10,
         fontWeight: '500',
         color: COLORS.slate400,
+    },
+    createdFooter: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 32,
+        paddingBottom: 100, // accommodate fab
+    },
+    createdText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: COLORS.slate400,
+        letterSpacing: 0.5,
     }
 });
