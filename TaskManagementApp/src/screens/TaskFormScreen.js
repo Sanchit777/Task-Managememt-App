@@ -20,12 +20,16 @@ export default function TaskFormScreen({ navigation }) {
         assignedDate: new Date().toISOString().split('T')[0],
         completionDate: '',
         deadline: '',
-        remarks: ''
+        remarks: '',
+        startTime: '',
+        endTime: ''
     });
 
     const [loading, setLoading] = useState(false);
     const [showAssignedDatePicker, setShowAssignedDatePicker] = useState(false);
     const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
+    const [showStartTimePicker, setShowStartTimePicker] = useState(false);
+    const [showEndTimePicker, setShowEndTimePicker] = useState(false);
 
     const onAssignedDateChange = (event, selectedDate) => {
         setShowAssignedDatePicker(Platform.OS === 'ios');
@@ -38,6 +42,20 @@ export default function TaskFormScreen({ navigation }) {
         setShowDeadlinePicker(Platform.OS === 'ios');
         if (selectedDate) {
             handleChange('deadline', selectedDate.toISOString().split('T')[0]);
+        }
+    };
+
+    const onStartTimeChange = (event, selectedDate) => {
+        setShowStartTimePicker(Platform.OS === 'ios');
+        if (selectedDate) {
+            handleChange('startTime', selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        }
+    };
+
+    const onEndTimeChange = (event, selectedDate) => {
+        setShowEndTimePicker(Platform.OS === 'ios');
+        if (selectedDate) {
+            handleChange('endTime', selectedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         }
     };
 
@@ -238,6 +256,47 @@ export default function TaskFormScreen({ navigation }) {
                                     mode="date"
                                     display="default"
                                     onChange={onDeadlineChange}
+                                />
+                            )}
+                        </View>
+                    </View>
+
+                    <View style={styles.dateRow}>
+                        <View style={[styles.inputGroup, {flex: 1, marginRight: 8}]}>
+                            <Text style={[styles.label, { color: COLORS.slate700 }]}>Start Time</Text>
+                            <TouchableOpacity 
+                                style={[styles.input, { justifyContent: 'center', backgroundColor: COLORS.slate50, borderColor: COLORS.slate200 }]}
+                                onPress={() => setShowStartTimePicker(true)}
+                            >
+                                <Text style={{ color: formData.startTime ? COLORS.slate900 : COLORS.slate400 }}>
+                                    {formData.startTime || "HH:MM"}
+                                </Text>
+                            </TouchableOpacity>
+                            {showStartTimePicker && (
+                                <DateTimePicker
+                                    value={new Date()}
+                                    mode="time"
+                                    display="default"
+                                    onChange={onStartTimeChange}
+                                />
+                            )}
+                        </View>
+                        <View style={[styles.inputGroup, {flex: 1, marginLeft: 8}]}>
+                            <Text style={[styles.label, { color: COLORS.slate700 }]}>End Time</Text>
+                            <TouchableOpacity 
+                                style={[styles.input, { justifyContent: 'center', backgroundColor: COLORS.slate50, borderColor: COLORS.slate200 }]}
+                                onPress={() => setShowEndTimePicker(true)}
+                            >
+                                <Text style={{ color: formData.endTime ? COLORS.slate900 : COLORS.slate400 }}>
+                                    {formData.endTime || "HH:MM"}
+                                </Text>
+                            </TouchableOpacity>
+                            {showEndTimePicker && (
+                                <DateTimePicker
+                                    value={new Date()}
+                                    mode="time"
+                                    display="default"
+                                    onChange={onEndTimeChange}
                                 />
                             )}
                         </View>

@@ -44,7 +44,7 @@ async function initGoogleSheets() {
 
         const tasksSheet = doc.sheetsByTitle['Tasks'];
         if (!tasksSheet) {
-             await doc.addSheet({ title: 'Tasks', headerValues: ['Task ID', 'Date', 'Client Name', 'System Name', 'Task Type', 'Description', 'Responsible Person', 'Status', 'Assigned Date', 'Completion Date', 'Deadline', 'Remarks'] });
+             await doc.addSheet({ title: 'Tasks', headerValues: ['Task ID', 'Date', 'Client Name', 'System Name', 'Task Type', 'Description', 'Responsible Person', 'Status', 'Assigned Date', 'Completion Date', 'Deadline', 'Remarks', 'Start Time', 'End Time'] });
              console.log("Created 'Tasks' sheet");
         }
 
@@ -135,7 +135,9 @@ app.get('/api/tasks', async (req, res) => {
                 assignedDate: row.get('Assigned Date'),
                 completionDate: row.get('Completion Date'),
                 deadline: row.get('Deadline'),
-                remarks: row.get('Remarks')
+                remarks: row.get('Remarks'),
+                startTime: row.get('Start Time'),
+                endTime: row.get('End Time')
             }
         });
         
@@ -168,7 +170,9 @@ app.post('/api/tasks', async (req, res) => {
             'Assigned Date': req.body.assignedDate || '',
             'Completion Date': req.body.completionDate || '',
             'Deadline': req.body.deadline || '',
-            'Remarks': req.body.remarks || ''
+            'Remarks': req.body.remarks || '',
+            'Start Time': req.body.startTime || '',
+            'End Time': req.body.endTime || ''
         };
 
         await sheet.addRow(rowData);
@@ -256,6 +260,16 @@ app.put('/api/tasks/:id', async (req, res) => {
         if (req.body.completionDate) row.assign({'Completion Date': req.body.completionDate});
         if (req.body.deadline) row.assign({'Deadline': req.body.deadline});
         if (req.body.remarks) row.assign({'Remarks': req.body.remarks});
+        if (req.body.startTime) row.assign({'Start Time': req.body.startTime});
+        if (req.body.endTime) row.assign({'End Time': req.body.endTime});
+
+        if (newStatus === 'Completed' && oldStatus !== 'Completed') {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            row.assign({'Completion Date': `${year}-${month}-${day}`});
+        }
 
         await row.save();
 

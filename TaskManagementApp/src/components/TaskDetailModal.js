@@ -100,10 +100,13 @@ export default function TaskDetailModal({ visible, task, onClose, onRefresh }) {
                         </View>
 
                         <View style={styles.detailRow}>
-                            <Text style={styles.label}>Dates</Text>
+                            <Text style={styles.label}>Dates & Timings</Text>
                             <View style={styles.dateContainer}>
                                 <Text style={styles.dateText}>Assigned: {task.date || task.workAssignedDate || 'N/A'}</Text>
                                 <Text style={styles.dateText}>Deadline: {task.deadline || 'N/A'}</Text>
+                                {task.startTime ? <Text style={styles.dateText}>Start Time: {task.startTime}</Text> : null}
+                                {task.endTime ? <Text style={styles.dateText}>End Time: {task.endTime}</Text> : null}
+                                {task.completionDate ? <Text style={styles.dateText}>Completed On: {task.completionDate}</Text> : null}
                             </View>
                         </View>
                     </ScrollView>
