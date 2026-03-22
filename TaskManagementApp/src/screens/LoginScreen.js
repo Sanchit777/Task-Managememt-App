@@ -1,48 +1,78 @@
 import React, { useState, useContext } from 'react';
 import { View, StyleSheet, KeyboardAvoidingView, Platform, TouchableOpacity, Text, Dimensions } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { TextInput, ActivityIndicator } from 'react-native-paper';
 import { MaterialIcons } from '@expo/vector-icons';
 import { loginUser } from '../services/api';
 import { ThemeContext } from '../constants/ThemeContext';
+import { AuthContext } from '../constants/AuthContext';
+import AppCustomModal from '../components/AppCustomModal';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen({ navigation }) {
   const { COLORS } = useContext(ThemeContext);
+  const { login } = useContext(AuthContext);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Modal state
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalConfig, setModalConfig] = useState({ title: '', message: '', type: 'error' });
 
   const handleLogin = async () => {
     if (!username || !password) {
-      setError('Please fill in both fields.');
+      setModalConfig({
+        title: 'Input Required',
+        message: 'Please provide both your User ID and password to continue.',
+        type: 'warning'
+      });
+      setModalVisible(true);
       return;
     }
 
     setLoading(true);
-    setError('');
 
     try {
       const data = await loginUser(username, password);
       if(data.success) {
+         await login(data.user);
          navigation.replace('Dashboard');
       } else {
-         setError('Login failed.');
+         setModalConfig({
+           title: 'Login Failed',
+           message: 'The User ID or password you entered is incorrect. Please try again.',
+           type: 'error'
+         });
+         setModalVisible(true);
       }
     } catch (err) {
-      setError(err.message);
+      setModalConfig({
+        title: 'Connection Error',
+        message: err.message || 'We are unable to connect to the server. Please check your internet.',
+        type: 'error'
+      });
+      setModalVisible(true);
     } finally {
       setLoading(false);
     }
   };
 
   return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.bgLight }}>
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: COLORS.bgLight }]}
     >
+      <AppCustomModal 
+        visible={modalVisible} 
+        onClose={() => setModalVisible(false)} 
+        title={modalConfig.title} 
+        message={modalConfig.message} 
+        type={modalConfig.type} 
+      />
       <View style={[styles.card, { backgroundColor: COLORS.white, shadowColor: COLORS.primary }]}>
         {/* Branding Header */}
         <View style={styles.headerContainer}>
@@ -102,8 +132,6 @@ export default function LoginScreen({ navigation }) {
             </View>
           </View>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
-
           <TouchableOpacity style={styles.forgotPassword}>
             <Text style={[styles.forgotPasswordText, { color: COLORS.primary }]}>Forgot Password?</Text>
           </TouchableOpacity>
@@ -129,6 +157,7 @@ export default function LoginScreen({ navigation }) {
       <View style={[styles.bgBlobRight, { backgroundColor: `${COLORS.primary}0D` }]} />
       <View style={[styles.bgBlobLeft, { backgroundColor: `${COLORS.primary}1A` }]} />
     </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

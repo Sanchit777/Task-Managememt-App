@@ -1,16 +1,22 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Text, Image, SafeAreaView, Platform } from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl, TouchableOpacity, Text, Image, Platform, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getTasks } from '../services/api';
 import { ThemeContext } from '../constants/ThemeContext';
+import { AuthContext } from '../constants/AuthContext';
 import SummaryListModal from '../components/SummaryListModal';
 import TaskDetailModal from '../components/TaskDetailModal';
+import useDebounce from '../hooks/useDebounce';
 
 export default function DashboardScreen({ navigation }) {
     const { COLORS } = useContext(ThemeContext);
+    const { user } = useContext(AuthContext);
     const styles = React.useMemo(() => getStyles(COLORS), [COLORS]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
     const [selectedTask, setSelectedTask] = useState(null);
     const [taskModalVisible, setTaskModalVisible] = useState(false);
@@ -50,7 +56,10 @@ export default function DashboardScreen({ navigation }) {
         return unsubscribe;
     }, [navigation]);
 
-    const logout = () => {
+    const { logout: clearSession } = useContext(AuthContext);
+
+    const logout = async () => {
+         await clearSession();
          navigation.replace('Login');
     };
 
@@ -59,8 +68,64 @@ export default function DashboardScreen({ navigation }) {
     const pendingTasks = tasks.filter(t => t.status === 'Pending').length;
     const totalTasks = tasks.length;
     
-    // Simplistic 'near deadline' mock for UI
-    const nearDeadline = tasks.filter(t => t.status !== 'Completed').length > 0 ? 1 : 0;
+    // Calculate total time worked today
+    const parseStartTime = (timeStr) => {
+        if (!timeStr) return Date.now();
+        const match = String(timeStr).match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
+        if (!match) return Date.now();
+        let hours = parseInt(match[1], 10);
+        let minutes = parseInt(match[2], 10);
+        const ampm = match[3] ? match[3].toUpperCase() : null;
+        if (ampm === 'PM' && hours < 12) hours += 12;
+        if (ampm === 'AM' && hours === 12) hours = 0;
+        const d = new Date();
+        d.setHours(hours, minutes, 0, 0);
+        return d.getTime();
+    };
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayTasks = tasks.filter(t => t.date === todayStr);
+
+    // Filter tasks based on debounced search query
+    const filteredTodayTasks = todayTasks.filter(task => {
+        const query = debouncedSearchQuery.toLowerCase();
+        return (
+            task.description?.toLowerCase().includes(query) ||
+            task.clientName?.toLowerCase().includes(query) ||
+            task.id?.toString().includes(query) ||
+            task.taskType?.toLowerCase().includes(query)
+        );
+    });
+
+    let totalTrackedSecondsToday = 0;
+    todayTasks.forEach(task => {
+        const isUnstarted = task.status === 'Pending';
+        if (isUnstarted) return;
+        
+        const starts = task.startTime ? String(task.startTime).split(',').map(s => s.trim()).filter(Boolean) : [];
+        const ends = task.endTime ? String(task.endTime).split(',').map(s => s.trim()).filter(Boolean) : [];
+        const isRunning = task.status === 'In Progress' && starts.length > ends.length;
+        
+        for (let i = 0; i < ends.length; i++) {
+           const sMs = parseStartTime(starts[i]);
+           const eMs = parseStartTime(ends[i]);
+           if (eMs >= sMs) totalTrackedSecondsToday += Math.floor((eMs - sMs) / 1000);
+        }
+        
+        if (isRunning && starts.length > 0) {
+            const currentStartMs = parseStartTime(starts[starts.length - 1]);
+            totalTrackedSecondsToday += Math.max(0, Math.floor((Date.now() - currentStartMs) / 1000));
+        }
+    });
+
+    const formatElapsedShort = (totalSecs) => {
+        if (totalSecs === 0) return "0h 0m";
+        const h = Math.floor(totalSecs / 3600);
+        const m = Math.floor((totalSecs % 3600) / 60);
+        return `${h}h ${m}m`;
+    };
+    
+    const timeWorkedTodayText = formatElapsedShort(totalTrackedSecondsToday);
 
     const renderTask = ({ item }) => {
         let statusColor = COLORS.slate600;
@@ -77,6 +142,16 @@ export default function DashboardScreen({ navigation }) {
             statusBg = COLORS.slate200;
         }
 
+        let priorityColor = COLORS.primary;
+        let priorityBg = `${COLORS.primary}1A`;
+        if (item.priority === 'High') {
+            priorityColor = COLORS.rose600;
+            priorityBg = `${COLORS.rose600}1A`;
+        } else if (item.priority === 'Medium') {
+            priorityColor = COLORS.amber600;
+            priorityBg = `${COLORS.amber600}1A`;
+        }
+
         return (
             <TouchableOpacity style={styles.taskCard} onPress={() => handleTaskPress(item)}>
                 <View style={styles.taskHeader}>
@@ -84,8 +159,13 @@ export default function DashboardScreen({ navigation }) {
                         <Text style={styles.taskTitle}>{item.description || item.taskType || 'Task'}</Text>
                         <Text style={styles.taskSubtitle}>Client: {item.clientName}</Text>
                     </View>
-                    <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
-                        <Text style={[styles.statusText, { color: statusColor }]}>{item.status}</Text>
+                    <View style={styles.taskHeaderRight}>
+                        <View style={[styles.statusBadge, { backgroundColor: priorityBg, marginRight: 6 }]}>
+                            <Text style={[styles.statusText, { color: priorityColor, fontSize: 8 }]}>{item.priority || 'Medium'}</Text>
+                        </View>
+                        <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+                            <Text style={[styles.statusText, { color: statusColor }]}>{item.status}</Text>
+                        </View>
                     </View>
                 </View>
                 
@@ -109,8 +189,8 @@ export default function DashboardScreen({ navigation }) {
                         <MaterialIcons name="person" size={24} color={COLORS.primary} />
                     </View>
                     <View>
-                        <Text style={styles.userName}>Task Admin</Text>
-                        <Text style={styles.userRole}>Manager</Text>
+                        <Text style={styles.userName}>{user?.name || 'Task User'}</Text>
+                        <Text style={styles.userRole}>{user?.position || user?.role || 'Member'}</Text>
                     </View>
                 </View>
                 <TouchableOpacity style={styles.logoutButton} onPress={logout}>
@@ -120,18 +200,34 @@ export default function DashboardScreen({ navigation }) {
             </View>
 
             <FlatList
-                data={tasks}
+                data={filteredTodayTasks}
                 keyExtractor={(item, index) => item.id || index.toString()}
                 contentContainerStyle={styles.scrollContent}
+                removeClippedSubviews={Platform.OS === 'android'}
+                initialNumToRender={10}
+                maxToRenderPerBatch={10}
+                windowSize={5}
                 refreshControl={
                     <RefreshControl refreshing={loading} onRefresh={loadTasks} colors={[COLORS.primary]} />
                 }
-                ListHeaderComponent={() => (
+                ListHeaderComponent={
                     <View>
-                        {/* Search Bar Placeholder */}
+                        {/* Search Bar */}
                         <View style={styles.searchContainer}>
                             <MaterialIcons name="search" size={20} color={COLORS.slate400} style={styles.searchIcon} />
-                            <Text style={styles.searchPlaceholder}>Search tasks, IDs, or clients...</Text>
+                            <TextInput
+                                style={styles.searchInput}
+                                placeholder="Search tasks, IDs, or clients..."
+                                placeholderTextColor={COLORS.slate400}
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                autoCapitalize="none"
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                    <MaterialIcons name="close" size={20} color={COLORS.slate400} />
+                                </TouchableOpacity>
+                            )}
                         </View>
 
                         {/* KPI Cards */}
@@ -151,10 +247,10 @@ export default function DashboardScreen({ navigation }) {
                                 <Text style={styles.kpiLabel}>Pending</Text>
                                 <Text style={styles.kpiValue}>{pendingTasks}</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={[styles.kpiCard, styles.kpiNearDeadline]} onPress={() => openSummary('Near Deadline', tasks.filter(t => t.status !== 'Completed'))}>
-                                <MaterialIcons name="alarm" size={24} color={COLORS.rose600} style={styles.kpiIcon} />
-                                <Text style={styles.kpiLabel}>Near Deadline</Text>
-                                <Text style={styles.kpiValue}>{nearDeadline}</Text>
+                            <TouchableOpacity style={[styles.kpiCard, styles.kpiNearDeadline]} onPress={() => openSummary('Today\'s Tasks', todayTasks)}>
+                                <MaterialIcons name="schedule" size={24} color={COLORS.rose600} style={styles.kpiIcon} />
+                                <Text style={styles.kpiLabel}>Time Worked</Text>
+                                <Text style={styles.kpiValue}>{timeWorkedTodayText}</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -166,14 +262,18 @@ export default function DashboardScreen({ navigation }) {
                             </TouchableOpacity>
                         </View>
                     </View>
-                )}
+                }
                 renderItem={renderTask}
                 ListFooterComponent={
                     <View style={styles.createdFooter}>
                         <Text style={styles.createdText}>Created By Sanchit</Text>
                     </View>
                 }
-                ListEmptyComponent={<Text style={styles.empty}>No tasks available</Text>}
+                ListEmptyComponent={
+                    <Text style={styles.empty}>
+                        {searchQuery ? `No tasks found matching "${searchQuery}"` : "No tasks available for today"}
+                    </Text>
+                }
             />
             
             <TouchableOpacity 
@@ -275,9 +375,11 @@ const getStyles = (COLORS) => StyleSheet.create({
     searchIcon: {
         marginRight: 8,
     },
-    searchPlaceholder: {
-        color: COLORS.slate400,
+    searchInput: {
+        flex: 1,
+        color: COLORS.slate900,
         fontSize: 14,
+        paddingVertical: 8,
     },
     kpiGrid: {
         flexDirection: 'row',
@@ -359,6 +461,10 @@ const getStyles = (COLORS) => StyleSheet.create({
     },
     taskHeaderLeft: {
         flex: 1,
+    },
+    taskHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
         paddingRight: 8,
     },
     taskTitle: {

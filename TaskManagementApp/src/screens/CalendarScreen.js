@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Text, SafeAreaView, Platform } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Text, Platform } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Calendar } from 'react-native-calendars';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getTasks } from '../services/api';

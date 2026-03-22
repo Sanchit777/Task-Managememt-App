@@ -1,8 +1,7 @@
 import axios from 'axios';
 
-// Replace with your local machine's IP address when running on a physical device, 
-// or 10.0.2.2 for Android Emulator, or localhost for iOS Simulator
-const API_URL = 'https://task-managememt-app.onrender.com/api'; 
+// Production Render Backend
+const API_URL = 'https://task-managememt-app.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_URL,
@@ -50,6 +49,15 @@ export const updateTaskStatus = async (taskId, status) => {
         throw error.response?.data || error;
     }
 };
+
+export const updateUser = async (id, userData) => {
+    try {
+        const response = await api.put(`/users/${id}`, userData);
+        return response.data;
+    } catch (error) {
+         throw error.response?.data || new Error('Failed to update user');
+    }
+}
 
 export const updateTask = async (id, taskData) => {
     try {

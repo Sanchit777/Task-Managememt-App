@@ -15,6 +15,7 @@
       "supportsTablet": true
     },
     "android": {
+      "jsEngine": "hermes",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -30,6 +31,10 @@
       "eas": {
         "projectId": "1cd1e213-b952-4ac0-b05f-76892762aa08"
       }
-    }
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-notifications"
+    ]
   }
 }

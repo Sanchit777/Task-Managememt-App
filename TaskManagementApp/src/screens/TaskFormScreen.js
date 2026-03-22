@@ -1,10 +1,13 @@
 import React, { useState, useContext } from 'react';
-import { View, StyleSheet, ScrollView, Platform, TouchableOpacity, Text, TextInput, SafeAreaView } from 'react-native';
+import { View, StyleSheet, ScrollView, Platform, TouchableOpacity, Text, TextInput } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { createTask } from '../services/api';
 import { ThemeContext } from '../constants/ThemeContext';
+import AppCustomModal from '../components/AppCustomModal';
+import { scheduleTaskReminder, sendImmediateNotification } from '../services/NotificationService';
 
 export default function TaskFormScreen({ navigation }) {
     const { COLORS } = useContext(ThemeContext);
@@ -22,7 +25,8 @@ export default function TaskFormScreen({ navigation }) {
         deadline: '',
         remarks: '',
         startTime: '',
-        endTime: ''
+        endTime: '',
+        priority: 'Medium'
     });
 
     const [loading, setLoading] = useState(false);
@@ -30,6 +34,10 @@ export default function TaskFormScreen({ navigation }) {
     const [showDeadlinePicker, setShowDeadlinePicker] = useState(false);
     const [showStartTimePicker, setShowStartTimePicker] = useState(false);
     const [showEndTimePicker, setShowEndTimePicker] = useState(false);
+
+    // Modal state
+    const [modalVisible, setModalVisible] = useState(false);
+    const [modalConfig, setModalConfig] = useState({ title: '', message: '', type: 'success', onSuccess: null });
 
     const onAssignedDateChange = (event, selectedDate) => {
         setShowAssignedDatePicker(Platform.OS === 'ios');
@@ -67,19 +75,48 @@ export default function TaskFormScreen({ navigation }) {
         handleChange('status', status);
     };
 
+    const handlePriorityChange = (priority) => {
+        handleChange('priority', priority);
+    };
+
     const handleSubmit = async () => {
         if (!formData.clientName || !formData.description) {
-            alert('Please fill out required fields (Client, Description).');
+            setModalConfig({
+                title: 'Missing Info',
+                message: 'Please fill out required fields (Client, Description) before saving.',
+                type: 'warning'
+            });
+            setModalVisible(true);
             return;
         }
 
         setLoading(true);
         try {
-            await createTask(formData);
-            alert('Task created successfully!');
-            navigation.goBack();
+            const result = await createTask(formData);
+            
+            // Notifications
+            if (result.success && result.task) {
+                await scheduleTaskReminder(result.task);
+                await sendImmediateNotification(
+                    'Task Created!',
+                    `Task for ${result.task.clientName} has been recorded.`
+                );
+            }
+            
+            setModalConfig({
+                title: 'Task Created!',
+                message: 'Your new task has been successfully recorded in the system.',
+                type: 'success',
+                onSuccess: () => navigation.goBack()
+            });
+            setModalVisible(true);
         } catch (error) {
-            alert('Error creating task.');
+            setModalConfig({
+                title: 'Creation Failed',
+                message: error.error || error.message || 'We encountered an error while creating your task.',
+                type: 'error'
+            });
+            setModalVisible(true);
         } finally {
             setLoading(false);
         }
@@ -87,6 +124,16 @@ export default function TaskFormScreen({ navigation }) {
 
     return (
         <SafeAreaView style={styles.container}>
+            <AppCustomModal 
+                visible={modalVisible} 
+                onClose={() => {
+                    setModalVisible(false);
+                    if (modalConfig.onSuccess) modalConfig.onSuccess();
+                }} 
+                title={modalConfig.title} 
+                message={modalConfig.message} 
+                type={modalConfig.type} 
+            />
             {/* Top App Bar */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.iconButton} onPress={() => navigation.goBack()}>
@@ -208,6 +255,33 @@ export default function TaskFormScreen({ navigation }) {
                             >
                                 <MaterialIcons name="check-circle" size={20} color={formData.status === 'Completed' ? COLORS.primary : COLORS.slate500} style={{marginBottom: 4}} />
                                 <Text style={[styles.statusBtnText, { color: COLORS.slate500 }, formData.status === 'Completed' && { color: COLORS.primary }]}>Completed</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+
+                    <View style={[styles.inputGroup, { marginTop: 16 }]}>
+                        <Text style={[styles.label, { color: COLORS.slate700 }]}>Priority Level</Text>
+                        <View style={styles.statusRow}>
+                            <TouchableOpacity 
+                                style={[styles.statusBtn, { borderColor: COLORS.slate100, backgroundColor: COLORS.slate50 }, formData.priority === 'High' && { borderColor: COLORS.rose600, backgroundColor: `${COLORS.rose600}1A` }]}
+                                onPress={() => handlePriorityChange('High')}
+                            >
+                                <MaterialIcons name="priority-high" size={20} color={formData.priority === 'High' ? COLORS.rose600 : COLORS.slate500} style={{marginBottom: 4}} />
+                                <Text style={[styles.statusBtnText, { color: COLORS.slate500 }, formData.priority === 'High' && { color: COLORS.rose600 }]}>High</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.statusBtn, { borderColor: COLORS.slate100, backgroundColor: COLORS.slate50 }, formData.priority === 'Medium' && { borderColor: COLORS.amber600, backgroundColor: `${COLORS.amber600}1A` }]}
+                                onPress={() => handlePriorityChange('Medium')}
+                            >
+                                <MaterialIcons name="low-priority" size={20} color={formData.priority === 'Medium' ? COLORS.amber600 : COLORS.slate500} style={{marginBottom: 4}} />
+                                <Text style={[styles.statusBtnText, { color: COLORS.slate500 }, formData.priority === 'Medium' && { color: COLORS.amber600 }]}>Medium</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.statusBtn, { borderColor: COLORS.slate100, backgroundColor: COLORS.slate50 }, formData.priority === 'Low' && { borderColor: COLORS.primary, backgroundColor: `${COLORS.primary}1A` }]}
+                                onPress={() => handlePriorityChange('Low')}
+                            >
+                                <MaterialIcons name="keyboard-arrow-down" size={20} color={formData.priority === 'Low' ? COLORS.primary : COLORS.slate500} style={{marginBottom: 4}} />
+                                <Text style={[styles.statusBtnText, { color: COLORS.slate500 }, formData.priority === 'Low' && { color: COLORS.primary }]}>Low</Text>
                             </TouchableOpacity>
                         </View>
                     </View>

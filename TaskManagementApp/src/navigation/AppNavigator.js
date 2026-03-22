@@ -4,6 +4,8 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ThemeContext } from '../constants/ThemeContext';
+import { AuthContext } from '../constants/AuthContext';
+import { View, ActivityIndicator } from 'react-native';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -49,9 +51,20 @@ function MainTabNavigator() {
 }
 
 export default function AppNavigator() {
+  const { user, loading } = useContext(AuthContext);
+  const { COLORS } = useContext(ThemeContext);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: COLORS.bgLight, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false, animation: 'fade' }}>
+      <Stack.Navigator initialRouteName={user ? "Dashboard" : "Login"} screenOptions={{ headerShown: false, animation: 'fade' }}>
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Dashboard" component={MainTabNavigator} />
         <Stack.Screen name="TaskForm" component={TaskFormScreen} options={{ animation: 'slide_from_bottom' }} />
