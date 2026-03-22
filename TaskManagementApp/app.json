@@ -4,10 +4,11 @@
     "slug": "TaskManagementApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "jsEngine": "hermes",
+    "icon": "./assets/icon.jpg",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/splash-icon.jpg",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -15,10 +16,9 @@
       "supportsTablet": true
     },
     "android": {
-      "jsEngine": "hermes",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
+        "foregroundImage": "./assets/android-icon-foreground.jpg",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
