@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Provider as PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'react-native';
@@ -10,11 +10,23 @@ import { requestPermissions } from './src/services/NotificationService';
 
 export default function App() {
   useEffect(() => {
-    // Request Notification Permissions
-    requestPermissions();
+    const initializeApp = async () => {
+      try {
+        // Request Notification Permissions (Safe call)
+        await requestPermissions();
+      } catch (e) {
+        console.warn("Notification Permission Error:", e);
+      }
 
-    // Hidden "Warm-up" ping to wake up Render backend as early as possible
-    api.get('/health').catch(() => {});
+      try {
+        // Hidden "Warm-up" ping to wake up Render backend
+        api.get('/health').catch(() => {});
+      } catch (e) {
+        // Ignore warm-up errors
+      }
+    };
+
+    initializeApp();
   }, []);
 
   return (
