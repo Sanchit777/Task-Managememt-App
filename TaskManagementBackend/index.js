@@ -4,6 +4,7 @@ const cors = require('cors');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { Resend } = require('resend');
+const twilio = require('twilio');
 
 const app = express();
 app.use(cors());
@@ -24,6 +25,9 @@ const serviceAccountAuth = new JWT({
 });
 
 let doc;
+let tasksCache = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 async function initGoogleSheets() {
     try {
@@ -38,14 +42,28 @@ async function initGoogleSheets() {
         // Ensure Tabs Exist
         const usersSheet = doc.sheetsByTitle['Users'];
         if (!usersSheet) {
-             await doc.addSheet({ title: 'Users', headerValues: ['ID', 'Password', 'Role'] });
+             await doc.addSheet({ title: 'Users', headerValues: ['ID', 'Password', 'Role', 'Name', 'DOB', 'Position', 'Joining Date'] });
              console.log("Created 'Users' sheet");
+        } else {
+             // Ensure existing sheet has all headers
+             try {
+                 await usersSheet.setHeaderRow(['ID', 'Password', 'Role', 'Name', 'DOB', 'Position', 'Joining Date']);
+             } catch (headerError) {
+                 console.warn("Could not update User headers (might be rate limited):", headerError.message);
+             }
         }
 
         const tasksSheet = doc.sheetsByTitle['Tasks'];
         if (!tasksSheet) {
-             await doc.addSheet({ title: 'Tasks', headerValues: ['Task ID', 'Date', 'Client Name', 'System Name', 'Task Type', 'Description', 'Responsible Person', 'Status', 'Assigned Date', 'Completion Date', 'Deadline', 'Remarks', 'Start Time', 'End Time'] });
+             await doc.addSheet({ title: 'Tasks', headerValues: ['Task ID', 'Date', 'Client Name', 'System Name', 'Task Type', 'Description', 'Responsible Person', 'Status', 'Assigned Date', 'Completion Date', 'Deadline', 'Remarks', 'Start Time', 'End Time', 'Priority'] });
              console.log("Created 'Tasks' sheet");
+        } else {
+             // Ensure existing sheet has all headers including Priority
+             try {
+                 await tasksSheet.setHeaderRow(['Task ID', 'Date', 'Client Name', 'System Name', 'Task Type', 'Description', 'Responsible Person', 'Status', 'Assigned Date', 'Completion Date', 'Deadline', 'Remarks', 'Start Time', 'End Time', 'Priority']);
+             } catch (e) {
+                 console.warn("Could not update Task headers:", e.message);
+             }
         }
 
     } catch (error) {
@@ -55,13 +73,25 @@ async function initGoogleSheets() {
 
 initGoogleSheets();
 
+// Function to clear cache
+function clearTasksCache() {
+    tasksCache = null;
+    cacheTimestamp = 0;
+    console.log("Tasks cache cleared.");
+}
+
 // Resend Config
 // We will use EMAIL_PASS for the Resend API Key temporarily to avoid needing to add new ENV vars immediately.
 const resend = new Resend(process.env.EMAIL_PASS);
 
+// Twilio Config
+let twilioClient;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+}
+
 // Helper for Task ID Generation
 const generateTaskId = async (sheet) => {
-    await sheet.loadCells('A:A'); // Assuming 'Task ID' is Column A
     const rows = await sheet.getRows();
     const today = new Date();
     
@@ -91,7 +121,7 @@ const generateTaskId = async (sheet) => {
 // --- Endpoints ---
 
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', sheetsConnected: !!doc });
+    res.json({ status: 'ok', sheetsConnected: !!doc, cacheActive: !!tasksCache });
 });
 
 // Login
@@ -105,7 +135,18 @@ app.post('/api/auth/login', async (req, res) => {
         const user = rows.find(r => r.get('ID') === username && r.get('Password') === password);
         
         if (user) {
-            res.json({ success: true, user: { id: user.get('ID'), role: user.get('Role') } }); 
+            res.json({ 
+                success: true, 
+                user: { 
+                    id: user.get('ID'), 
+                    role: user.get('Role'),
+                    name: user.get('Name') || '',
+                    dob: user.get('DOB') || '',
+                    position: user.get('Position') || '',
+                    joiningDate: user.get('Joining Date') || '',
+                    password: user.get('Password')
+                } 
+            }); 
         } else {
             res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
@@ -115,9 +156,57 @@ app.post('/api/auth/login', async (req, res) => {
     }
 });
 
-// Get All Tasks
+// Update User Profile
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, dob, position, joiningDate, password } = req.body;
+        
+        if (!doc) return res.status(500).json({ error: "Google Sheets not connected yet" });
+        const sheet = doc.sheetsByTitle['Users'];
+        const rows = await sheet.getRows();
+        
+        const userRow = rows.find(r => r.get('ID') === id);
+        if (!userRow) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (name !== undefined) userRow.set('Name', name);
+        if (dob !== undefined) userRow.set('DOB', dob);
+        if (position !== undefined) userRow.set('Position', position);
+        if (joiningDate !== undefined) userRow.set('Joining Date', joiningDate);
+        if (password !== undefined) userRow.set('Password', password);
+
+        await userRow.save();
+
+        res.json({
+            success: true,
+            user: {
+                id: userRow.get('ID'),
+                role: userRow.get('Role'),
+                name: userRow.get('Name'),
+                dob: userRow.get('DOB'),
+                position: userRow.get('Position'),
+                joiningDate: userRow.get('Joining Date'),
+                password: userRow.get('Password')
+            }
+        });
+
+    } catch (error) {
+        console.error("Update User Error:", error);
+        res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// Get All Tasks (WITH CACHING)
 app.get('/api/tasks', async (req, res) => {
     try {
+        const now = Date.now();
+        if (tasksCache && (now - cacheTimestamp < CACHE_DURATION)) {
+            console.log("Returning tasks from cache");
+            return res.json(tasksCache);
+        }
+
         if (!doc) return res.status(500).json({ error: "Google Sheets not connected yet" });
         const sheet = doc.sheetsByTitle['Tasks'];
         const rows = await sheet.getRows();
@@ -137,10 +226,14 @@ app.get('/api/tasks', async (req, res) => {
                 deadline: row.get('Deadline'),
                 remarks: row.get('Remarks'),
                 startTime: row.get('Start Time'),
-                endTime: row.get('End Time')
+                endTime: row.get('End Time'),
+                priority: row.get('Priority') || 'Medium'
             }
         });
         
+        tasksCache = tasks;
+        cacheTimestamp = now;
+        console.log("Cache updated with fresh tasks");
         res.json(tasks);
     } catch (error) {
         console.error("Get Tasks Error:", error);
@@ -148,12 +241,59 @@ app.get('/api/tasks', async (req, res) => {
     }
 });
 
+// Helper for parsing time
+function parseTime(timeStr) {
+    if (!timeStr) return 0;
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM|am|pm)?/);
+    if (!match) return 0;
+    let hours = parseInt(match[1], 10);
+    let minutes = parseInt(match[2], 10);
+    const ampm = match[3] ? match[3].toUpperCase() : null;
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+}
+
 // Create Task
 app.post('/api/tasks', async (req, res) => {
     try {
         if (!doc) return res.status(500).json({ error: "Google Sheets not connected yet" });
         const sheet = doc.sheetsByTitle['Tasks'];
         
+        // Validation logic for Task hours and overlapping
+        if (req.body.startTime && req.body.endTime && req.body.responsiblePerson && req.body.date) {
+            const newStart = parseTime(req.body.startTime);
+            const newEnd = parseTime(req.body.endTime);
+            
+            if (newEnd <= newStart) {
+                return res.status(400).json({ error: "End time must be after start time." });
+            }
+
+            const rows = await sheet.getRows();
+            let totalMinutesForDay = 0;
+            
+            for (const r of rows) {
+                if (r.get('Date') === req.body.date && r.get('Responsible Person') === req.body.responsiblePerson) {
+                    const existingStart = parseTime(r.get('Start Time'));
+                    const existingEnd = parseTime(r.get('End Time'));
+                    
+                    if (existingStart && existingEnd) {
+                        // Check for overlap
+                        if (newStart < existingEnd && newEnd > existingStart) {
+                            return res.status(400).json({ error: "Time overlaps with an existing task for this person." });
+                        }
+                        
+                        totalMinutesForDay += (existingEnd - existingStart);
+                    }
+                }
+            }
+
+            const newTaskMinutes = newEnd - newStart;
+            if (totalMinutesForDay + newTaskMinutes > 8 * 60) {
+                return res.status(400).json({ error: `Cannot exceed total of 8 hours of tasks for the day. This leaves them at ${((totalMinutesForDay + newTaskMinutes)/60).toFixed(1)} hours.` });
+            }
+        }
+
         const taskId = await generateTaskId(sheet);
         const newTaskData = { ...req.body, 'Task ID': taskId };
         
@@ -172,10 +312,12 @@ app.post('/api/tasks', async (req, res) => {
             'Deadline': req.body.deadline || '',
             'Remarks': req.body.remarks || '',
             'Start Time': req.body.startTime || '',
-            'End Time': req.body.endTime || ''
+            'End Time': req.body.endTime || '',
+            'Priority': req.body.priority || 'Medium'
         };
 
-        await sheet.addRow(rowData);
+        await sheet.addRow(rowData, { insert: true });
+        clearTasksCache(); // Invalidate cache on new task
 
         // Send Email Notification using Resend
         if (process.env.EMAIL_USER) {
@@ -221,6 +363,20 @@ app.post('/api/tasks', async (req, res) => {
                  else console.log('Resend Email sent successfully: ', data.id);
              } catch (err) {
                  console.log("Resend Exception: ", err);
+             }
+        }
+
+        // Send WhatsApp Notification using Twilio
+        if (twilioClient && process.env.TWILIO_WHATSAPP_FROM && process.env.WHATSAPP_TO_NUMBER) {
+             try {
+                 const message = await twilioClient.messages.create({
+                     body: `*New Task Assigned!*\n\n*Task ID:* ${taskId}\n*Client:* ${rowData['Client Name']}\n*Description:* ${rowData['Description']}\n*Deadline:* ${rowData['Deadline'] || 'Not Set'}`,
+                     from: process.env.TWILIO_WHATSAPP_FROM, // e.g., 'whatsapp:+14155238886'
+                     to: process.env.WHATSAPP_TO_NUMBER      // e.g., 'whatsapp:+919876543210'
+                 });
+                 console.log('Twilio WhatsApp sent successfully: ', message.sid);
+             } catch (err) {
+                 console.log("Twilio WhatsApp Exception: ", err);
              }
         }
 
@@ -354,19 +510,32 @@ app.delete('/api/tasks/:id', async (req, res) => {
         const sheet = doc.sheetsByTitle['Tasks'];
         const rows = await sheet.getRows();
         
-        const row = rows.find(r => r.get('Task ID') === id);
-        
-        if (row) {
-            await row.delete();
-            res.json({ success: true, message: "Task deleted" });
-        } else {
-             res.status(404).json({ error: "Task not found" });
+        const taskRow = rows.find(r => r.get('Task ID') === id);
+        if (!taskRow) {
+            return res.status(404).json({ error: "Task not found" });
         }
+
+        await taskRow.delete();
+        clearTasksCache(); // Invalidate cache on task deletion
+
+        res.json({ success: true, message: 'Task deleted successfully' });
     } catch (error) {
         console.error("Delete Task Error:", error);
         res.status(500).json({ error: "Internal Server Error" });
     }
 });
+
+// --- Render Keep-Alive / Warm-up Logic ---
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
+if (RENDER_EXTERNAL_URL) {
+  // Self-ping every 10 minutes to help prevent sleep during active use
+  setInterval(() => {
+    fetch(`${RENDER_EXTERNAL_URL}/api/health`)
+      .then(res => console.log(`Self-ping successful: ${res.status}`))
+      .catch(err => console.error("Self-ping failed:", err.message));
+  }, 10 * 60 * 1000); 
+  console.log(`Keep-alive active for: ${RENDER_EXTERNAL_URL}`);
+}
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
