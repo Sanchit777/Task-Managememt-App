@@ -428,6 +428,7 @@ app.put('/api/tasks/:id', async (req, res) => {
         }
 
         await row.save();
+        clearTasksCache(); // Invalidate cache on task update
 
         // Send Email Notification if Status Changed using Resend
         if (process.env.EMAIL_USER && oldStatus !== newStatus) {
